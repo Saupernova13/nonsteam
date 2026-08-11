@@ -7,6 +7,11 @@ While I've successfully used it for my own purposes, it's still in its infancy. 
 
 # nonsteam
 
+> **Fork note:** this fork adds [`addsteam`](ADDSTEAM.md), a one-argument wrapper that
+> takes a game's path, resolves its name, pulls the artwork from SteamGridDB and restarts
+> Steam - `addsteam "D:\Games\GameHere\Launch.exe"`. Everything below is upstream's
+> documentation and still applies.
+
 `nonsteam` is a tool and library for viewing and editing your non-Steam game entries from the command line or with code.  
   
 Steam stores its non-Steam game entries in an opaque binary file that can't be edited by hand or manipulated by common command-line tools. This has become an acute pain point with the introduction of the Steam Deck, as the Linux environment makes the CLI the most convenient means of performing customization.

@@ -1,0 +1,40 @@
+#!/bin/sh
+# addsteam - add a non-Steam PC game to Steam, with SteamGridDB artwork, from one path.
+#
+# Usage:
+#   addsteam "$HOME/Games/GameHere/Launch.exe"   add that executable
+#   addsteam "$HOME/Games/GameHere"              find the game exe in that folder
+#   addsteam <path> --name "Game Here"           override the derived name
+#   addsteam <path> --pick                       choose the SteamGridDB match yourself
+#   addsteam --remove "Game Here"                delete an entry and its artwork
+#   addsteam --list                              list existing non-Steam entries
+#   addsteam --help                              full option list
+#
+# Symlink this into a directory on your PATH, e.g.
+#   ln -s "$PWD/addsteam" ~/.local/bin/addsteam
+
+set -e
+
+# Resolve symlinks so the script still finds the repo when linked onto PATH.
+SELF="$0"
+while [ -L "$SELF" ]; do
+    TARGET="$(readlink "$SELF")"
+    case "$TARGET" in
+        /*) SELF="$TARGET" ;;
+        *)  SELF="$(dirname "$SELF")/$TARGET" ;;
+    esac
+done
+HERE="$(cd "$(dirname "$SELF")" && pwd)"
+SCRIPT="$HERE/scripts/addsteam.mjs"
+
+if [ ! -f "$SCRIPT" ]; then
+    echo "[ERROR] Script not found: $SCRIPT" >&2
+    exit 1
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+    echo "[ERROR] Node.js is not on PATH. Install Node.js, then run addsteam again." >&2
+    exit 1
+fi
+
+exec node "$SCRIPT" "$@"
