@@ -311,7 +311,7 @@ async function startSteam(steamExe) {
 
 // ------------------------------------------------------- exe resolution ---
 
-const EXE_BLOCKLIST = /(^|[^a-z])(unins|uninstall|setup|install|redist|vcredist|vc_redist|dxsetup|dxwebsetup|directx|dotnet|oalinst|crashhandler|crashreport|crashsender|unitycrashhandler|bugreport|notification_helper|touchup|dwebview|cefsub|subprocess|helper|server|dedicated|editor|benchmark|config|settings|patcher|updater|activation|python|ffmpeg|7z|winrar)/i;
+const EXE_BLOCKLIST = /(^|[^a-z])(unins|uninstall|setup|install|redist|vcredist|vc_redist|dxsetup|dxwebsetup|directx|dotnet|oalinst|crashhandler|crashreport|crashsender|crashpad|unitycrashhandler|bugreport|notification_helper|touchup|dwebview|cefsub|subprocess|helper|server|dedicated|editor|benchmark|config|settings|patcher|updater|activation|python|ffmpeg|7z|winrar)/i;
 
 // Folders that sit between the install root and the exe and never name the game.
 const CONTAINER_DIRS = new Set([
