@@ -226,7 +226,7 @@ program.addCommand(new Command('add')
       nonsteam.setImage(entry.appId, imageKind as ImageKind, image)
     ));
     nonsteam.addEntry(entry);
-    nonsteam.save(outputPath);
+    await nonsteam.save(outputPath);
   }
 ));
 

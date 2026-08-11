@@ -72,7 +72,9 @@ export const getSteamInstallInfo = async (): Promise<InstallInfo | null> => {
     const steamPathKey = String.raw`HKCU\SOFTWARE\Valve\Steam`;
 
     const records = await regedit.list([steamUsersKey, steamPathKey]);
-    userIds.push(...records[steamUsersKey].keys[0]);
+    if (records[steamUsersKey]?.keys?.[0]) {
+      userIds.push(...records[steamUsersKey].keys[0]);
+    }
     steamPath = records[steamPathKey].values.SteamPath?.value as string;
     searchPaths.push(...(steamPath ? [steamPath] : []));
   } else {

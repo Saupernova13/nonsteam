@@ -120,19 +120,18 @@ export class NonSteam {
 
   public async save(outputPath?: string): Promise<this> {
     const userInfo = this.userInfo;
-    if (!userInfo) {
-      return this;
-    }
-    await mkdirp(userInfo.paths.grid);
-    const newImageNames = Object.values(this._newImages)
-      .map(({ destPath }) => destPath)
-      .map(p => path.parse(p).name)
-    const imagesToDelete = newImageNames.length <= 0 ? [] : (await fs.readdir(userInfo.paths.grid))
-      .filter(filename => filename.match(new RegExp(`^(?:${newImageNames.join("|")})\.`)))
-      .map(filename => path.resolve(userInfo.paths.grid, filename));
+    if (userInfo) {
+      await mkdirp(userInfo.paths.grid);
+      const newImageNames = Object.values(this._newImages)
+        .map(({ destPath }) => destPath)
+        .map(p => path.parse(p).name)
+      const imagesToDelete = newImageNames.length <= 0 ? [] : (await fs.readdir(userInfo.paths.grid))
+        .filter(filename => filename.match(new RegExp(`^(?:${newImageNames.join("|")})\.`)))
+        .map(filename => path.resolve(userInfo.paths.grid, filename));
 
-    await Promise.all(imagesToDelete.map(image => fs.rm(image)));
-    await Promise.all(Object.values(this._newImages).map(({ sourcePath, destPath }) => fs.cp(sourcePath, destPath)));
+      await Promise.all(imagesToDelete.map(image => fs.rm(image)));
+      await Promise.all(Object.values(this._newImages).map(({ sourcePath, destPath }) => fs.cp(sourcePath, destPath)));
+    }
     await this.shortcuts.save(outputPath);
     return this;
   }
