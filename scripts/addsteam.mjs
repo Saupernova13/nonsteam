@@ -13,7 +13,7 @@
  *     (the nonsteam CLI only accepts a numeric --sgdb-id)
  *   - writes all five artwork files into userdata/<id>/config/grid itself, because
  *     nonsteam's own image copy silently no-ops when Steam's registry user key is absent,
- *     which it is on this machine
+ *     which it is on some Windows installs
  *   - closes Steam before touching shortcuts.vdf and restarts it after; a running Steam
  *     holds the file in memory and flushes its own copy back out on exit, which would
  *     otherwise throw the new entry away
@@ -58,6 +58,7 @@ addsteam - add a non-Steam game to Steam, with artwork, from one path.
 
 Usage:
   addsteam <exe-or-folder> [options]
+  addsteam --remove <name-or-appid>
   addsteam --list
   addsteam --help
 
@@ -86,6 +87,7 @@ Options:
       --force                Add a second entry even if this game is already there.
       --dry-run              Show what would happen, change nothing.
       --list                 List the non-Steam entries already in Steam.
+      --remove <name|appid>  Delete an entry and its artwork.
   -h, --help                 Show this help.
 
 Environment:
@@ -97,6 +99,7 @@ Environment:
 const FLAGS_WITH_VALUES = new Set([
   "--name", "-n", "--sgdb-id", "--start-dir", "-d", "--launch-options", "-o",
   "--tags", "-t", "--user", "-u", "--input", "-i", "--restart-steam",
+  "--remove", "--delete",
 ]);
 
 function parseArgs(argv) {
@@ -104,7 +107,8 @@ function parseArgs(argv) {
     target: null, name: null, keepName: false, sgdbId: null, pick: false,
     art: true, animated: false, startDir: null, launchOptions: "", tags: [],
     overlay: true, user: process.env.ADDSTEAM_STEAM_USER || null, input: null,
-    restartSteam: "auto", force: false, dryRun: false, list: false, help: false,
+    restartSteam: "auto", force: false, dryRun: false, list: false, remove: null,
+    help: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -128,6 +132,7 @@ function parseArgs(argv) {
       case "-i": case "--input": opts.input = value; break;
       case "--restart-steam": opts.restartSteam = String(value).toLowerCase(); break;
       case "--no-restart": opts.restartSteam = "never"; break;
+      case "--remove": case "--delete": opts.remove = value; break;
       case "--force": opts.force = true; break;
       case "--dry-run": opts.dryRun = true; break;
       case "--list": opts.list = true; break;
@@ -237,9 +242,24 @@ async function findSteamUser(steamPath, requested) {
   return ranked[0].id;
 }
 
-function steamExePath(steamPath) {
-  const exe = path.join(steamPath, IS_WINDOWS ? "steam.exe" : "steam");
-  return fsSync.existsSync(exe) && fsSync.statSync(exe).isFile() ? exe : null;
+/**
+ * -PathType Leaf matters here: on Linux ~/.steam/steam/steam is a *directory*, so an
+ * existence check alone hands the launcher a folder. The real binary is on PATH.
+ */
+async function steamExePath(steamPath) {
+  const local = path.join(steamPath, IS_WINDOWS ? "steam.exe" : "steam");
+  try {
+    if (fsSync.statSync(local).isFile()) return local;
+  } catch { /* fall through */ }
+
+  if (IS_WINDOWS) return null;
+  for (const candidate of ["steam", "steam-runtime"]) {
+    try {
+      const { stdout } = await execFileAsync("which", [candidate]);
+      if (stdout.trim()) return stdout.trim();
+    } catch { /* keep looking */ }
+  }
+  return null;
 }
 
 // --------------------------------------------------- steam start / stop ---
@@ -446,7 +466,7 @@ function cleanTitle(raw) {
 /**
  * "C:\Games\GameHere\Launch.exe" should become "GameHere", not "Launch".
  *
- * Drop the library folders above the game (H:\Games\PC\...) and the container folders
+ * Drop the library folders above the game (D:\Games\PC\...) and the container folders
  * below it (\Binaries\Win64\), and what is left is the install root - the folder someone
  * named after the game. Its innermost sibling and the exe stem come along as backups,
  * because engines like Unreal put a project codename in between: Hi-Fi RUSH installs to
@@ -660,6 +680,30 @@ async function backupShortcuts(shortcutsPath) {
   return dest;
 }
 
+/**
+ * Steam keeps shortcuts.vdf in memory and rewrites it from that copy when it exits, so
+ * anything written underneath a running Steam is discarded the moment it closes. Every
+ * write goes between holdSteam() and releaseSteam().
+ */
+async function holdSteam(steamPath, policy) {
+  const steamExe = await steamExePath(steamPath);
+  const wasRunning = await isSteamRunning();
+  let stopped = false;
+
+  if (policy === "never") {
+    if (wasRunning) log("Steam is running and --restart-steam=never was given: it will overwrite this change when it exits.", "WARN");
+  } else if (wasRunning) {
+    stopped = await shutdownSteam(steamExe);
+  }
+  return { steamExe, wasRunning, stopped };
+}
+
+async function releaseSteam({ steamExe, wasRunning, stopped }, policy, purpose) {
+  if (stopped || (policy === "always" && !wasRunning)) await startSteam(steamExe);
+  else if (!wasRunning) log(`Start Steam ${purpose}.`);
+  else log(`Restart Steam ${purpose}.`, "WARN");
+}
+
 async function loadNonsteam() {
   const bundle = path.join(REPO, "dist", "bundle", "index.js");
   if (!fsSync.existsSync(bundle)) {
@@ -671,11 +715,56 @@ async function loadNonsteam() {
   return import(`file://${bundle.replace(/\\/g, "/")}`);
 }
 
+// ---------------------------------------------------------------- remove ---
+
+async function removeEntry({ Shortcuts, shortcutsPath, gridDir, steamPath, opts }) {
+  const wanted = String(opts.remove);
+  const shortcuts = await Shortcuts.load(shortcutsPath);
+
+  const byId = shortcuts.entries.filter(e => String(e.appId) === wanted);
+  const byName = shortcuts.entries.filter(e => normalize(e.appName) === normalize(wanted));
+  const matches = byId.length ? byId : byName;
+
+  if (!matches.length) {
+    throw new UserError(`No non-Steam entry matches "${wanted}". Run 'addsteam --list' to see them.`);
+  }
+  if (matches.length > 1) {
+    throw new UserError(
+      `"${wanted}" matches ${matches.length} entries: ${matches.map(e => e.appId).join(", ")}. ` +
+      "Remove them one at a time by app id."
+    );
+  }
+
+  const entry = matches[0];
+  const artwork = (await fs.readdir(gridDir).catch(() => []))
+    .filter(f => path.parse(f).name.replace(/(p|_hero|_logo|_icon)$/, "") === String(entry.appId));
+
+  if (opts.dryRun) {
+    console.log(`\n[dry-run] Would remove "${entry.appName}" (app id ${entry.appId}) from ${shortcutsPath}`);
+    console.log(`[dry-run] Would delete ${artwork.length} artwork file(s): ${artwork.join(", ") || "none"}`);
+    return 0;
+  }
+
+  const steam = await holdSteam(steamPath, opts.restartSteam);
+  const backup = await backupShortcuts(shortcutsPath);
+  if (backup) log(`Backup: ${backup}`, "DEBUG");
+
+  // Reload after Steam exits: it may have flushed its own copy on the way out.
+  const current = await Shortcuts.load(shortcutsPath);
+  current.deleteEntry(entry.appId);
+  for (const file of artwork) await fs.rm(path.join(gridDir, file), { force: true });
+  await current.save(shortcutsPath);
+
+  log(`Removed "${entry.appName}" (app id ${entry.appId})${artwork.length ? ` and ${artwork.length} artwork file(s)` : ""}.`, "SUCCESS");
+  await releaseSteam(steam, opts.restartSteam, "for the removal to show up");
+  return 0;
+}
+
 // ------------------------------------------------------------------ main ---
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
-  if (opts.help || (!opts.target && !opts.list)) {
+  if (opts.help || (!opts.target && !opts.list && !opts.remove)) {
     console.log(USAGE);
     return opts.help ? 0 : 1;
   }
@@ -704,6 +793,10 @@ async function main() {
     }
     console.log("");
     return 0;
+  }
+
+  if (opts.remove) {
+    return removeEntry({ Shortcuts, shortcutsPath, gridDir, steamPath, opts });
   }
 
   const exe = await resolveExe(opts.target, opts.pick);
@@ -765,17 +858,7 @@ async function main() {
     return 0;
   }
 
-  // Steam keeps shortcuts.vdf in memory and rewrites it from that copy when it exits, so
-  // anything written underneath a running Steam is discarded a few minutes later.
-  const steamExe = steamExePath(steamPath);
-  const wasRunning = await isSteamRunning();
-  let stopped = false;
-
-  if (opts.restartSteam === "never") {
-    if (wasRunning) log("Steam is running and --restart-steam=never was given: it will overwrite this change when it exits.", "WARN");
-  } else if (wasRunning) {
-    stopped = await shutdownSteam(steamExe);
-  }
+  const steam = await holdSteam(steamPath, opts.restartSteam);
 
   const backup = await backupShortcuts(shortcutsPath);
   if (backup) log(`Backup: ${backup}`, "DEBUG");
@@ -823,13 +906,7 @@ async function main() {
   await shortcuts.save(shortcutsPath);
   log(`${isUpdate ? "Updated" : "Added"} "${appName}" (app id ${appId}).`, "SUCCESS");
 
-  if (stopped || (opts.restartSteam === "always" && !wasRunning)) {
-    await startSteam(steamExe);
-  } else if (!wasRunning) {
-    log("Start Steam to see the game in your library.");
-  } else {
-    log("Restart Steam to see the game in your library.", "WARN");
-  }
+  await releaseSteam(steam, opts.restartSteam, "to see the game in your library");
   return 0;
 }
 
