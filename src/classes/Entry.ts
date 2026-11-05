@@ -68,7 +68,7 @@ export class Entry implements IEntry {
     const entry = new Entry();
     STEAM_FIELD_KEYS.forEach(k => {
       const fieldBuffer = getFieldBuffer(buf, k);
-      if (buf.length) {
+      if (fieldBuffer.length) {
         entry.setField(k, Field.fromBuffer(fieldBuffer));
       }
     });

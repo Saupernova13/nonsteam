@@ -44,6 +44,15 @@ export const STEAM_FIELDS: Record<FieldDefinitionKey, FieldDefinition> = Object.
 
 export const STEAM_FIELD_KEYS = Object.keys(STEAM_FIELDS) as Array<keyof typeof STEAM_FIELDS>;
 
+// VDF keys are case-insensitive, and current Steam clients write some of them lowercase
+// ("appname"). Everything downstream uses the canonical spelling.
+const STEAM_FIELD_KEYS_BY_LOWER = new Map<string, FieldDefinitionKey>(
+  STEAM_FIELD_KEYS.map(key => [key.toLowerCase(), key])
+);
+
+export const canonicalSteamFieldKey = (key: string): FieldDefinitionKey | undefined =>
+  STEAM_FIELD_KEYS_BY_LOWER.get(key.toLowerCase());
+
 export const BLANK_ENTRY: IEntry = {
   appId: 0,
   appName: "",

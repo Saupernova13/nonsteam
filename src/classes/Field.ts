@@ -1,4 +1,4 @@
-import { NUL, SOH, STEAM_FIELDS, STX } from "../constants";
+import { canonicalSteamFieldKey, NUL, SOH, STEAM_FIELDS, STX } from "../constants";
 import {
   SteamFieldKey,
   SteamFieldNumberKey,
@@ -45,14 +45,15 @@ export abstract class Field {
   static fromBuffer<_TKey extends SteamFieldStringKey>(raw: Buffer): StringField;
   static fromBuffer<_TKey extends SteamFieldStringArrayKey>(raw: Buffer): StringArrayField;
   static fromBuffer(raw: Buffer): PrimitiveField | undefined {
-    const [key,] = parseFieldBuffer(raw);
-    if (!key) {
+    const [parsedKey,] = parseFieldBuffer(raw);
+    if (!parsedKey) {
       throw new Error("Field key can't be determined");
     }
-    const fieldDef = STEAM_FIELDS[key as SteamFieldKey];
-    if (!fieldDef) {
-      throw new Error(`Field '${key}' not expected`);
+    const key = canonicalSteamFieldKey(parsedKey);
+    if (!key) {
+      throw new Error(`Field '${parsedKey}' not expected`);
     }
+    const fieldDef = STEAM_FIELDS[key];
     switch (fieldDef.type) {
       case "string":
         return StringField.fromBuffer(raw);
@@ -96,8 +97,8 @@ export class NumberPrimitiveField<TKey extends SteamFieldNumberPrimitiveKey> ext
   }
 
   static fromBuffer(buf: Buffer) {
-    const [key, value] = parseNumberBuffer(buf);
-    return new this(key as SteamFieldNumberPrimitiveKey, value);
+    const [parsedKey, value] = parseNumberBuffer(buf);
+    return new this(canonicalSteamFieldKey(parsedKey) as SteamFieldNumberPrimitiveKey, value);
   }
 
   public toBuffer() {
@@ -117,8 +118,8 @@ export class StringPrimitiveField<TKey extends SteamFieldStringPrimitiveKey> ext
   }
 
   static fromBuffer(buf: Buffer) {
-    const [key, value] = parseStringBuffer(buf);
-    return new this(key as SteamFieldStringPrimitiveKey, value);
+    const [parsedKey, value] = parseStringBuffer(buf);
+    return new this(canonicalSteamFieldKey(parsedKey) as SteamFieldStringPrimitiveKey, value);
   }
 
   public toBuffer() {
@@ -136,8 +137,8 @@ export class StringArrayPrimitiveField<TKey extends SteamFieldStringArrayPrimiti
   }
 
   static fromBuffer(buf: Buffer) {
-    const [key, value] = parseStringArrayBuffer(buf);
-    return new this(key as SteamFieldStringArrayPrimitiveKey, value);
+    const [parsedKey, value] = parseStringArrayBuffer(buf);
+    return new this(canonicalSteamFieldKey(parsedKey) as SteamFieldStringArrayPrimitiveKey, value);
   }
 
   public toBuffer() {

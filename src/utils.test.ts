@@ -128,4 +128,27 @@ describe("getFieldBuffer", () => {
     assert.strictEqual(tags.subarray(1, 5).toString(), "tags");
     assert.strictEqual(tags.subarray(tags.length - 1)[0], NUL);
   });
+
+  it("matches keys regardless of case", () => {
+    const mock = bufferFromMixed(
+      NUL, "0", NUL,
+      STX, "appid",   NUL, 0x43, 0xA4, 0xF3, 0x19,
+      SOH, "appname", NUL, "Written by a current Steam client", NUL,
+      NUL, "tags",    NUL,
+    );
+
+    const appName = getFieldBuffer(mock, "AppName");
+    const [key, value] = parseStringBuffer(appName);
+    assert.strictEqual(key, "appname");
+    assert.strictEqual(value, "Written by a current Steam client");
+  });
+
+  it("returns an empty buffer for a missing field", () => {
+    const mock = bufferFromMixed(
+      NUL, "0", NUL,
+      STX, "appid", NUL, 0x43, 0xA4, 0xF3, 0x19,
+    );
+
+    assert.strictEqual(getFieldBuffer(mock, "AppName").length, 0);
+  });
 });

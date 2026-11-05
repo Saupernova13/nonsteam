@@ -28,6 +28,26 @@ export const bufferFromMixed = (...args: Array<number | string | Buffer>): Buffe
   return Buffer.concat(buffers);
 };
 
+const asciiLower = (b: number) => (b >= 65 && b <= 90 ? b + 32 : b);
+
+/**
+ * Finds `<type><key>\0` in a shortcuts entry, ignoring ASCII case. Valve's VDF keys are
+ * case-insensitive and current Steam clients write them lowercase ("appname"), so a
+ * case-sensitive search misses the field and hands the parser an unrelated buffer.
+ */
+export const findIndexOfKey = (haystack: Buffer, type: number, key: string): number => {
+  const needle = Buffer.from(key);
+  outer: for (let i = 0; i <= haystack.length - needle.length - 2; i++) {
+    if (haystack[i] !== type) continue;
+    const start = i + 1;
+    for (let j = 0; j < needle.length; j++) {
+      if (asciiLower(haystack[start + j]) !== asciiLower(needle[j])) continue outer;
+    }
+    if (haystack[start + needle.length] === NUL) return i;
+  }
+  return -1;
+};
+
 export const findIndexOfBufferInBuffer = (haystack: Buffer, needle: Buffer): number => {
   let isMatch = false;
   return haystack.findIndex((b, i) => {
@@ -135,14 +155,14 @@ export const findShortcutsFile = async (): Promise<[boolean, string, Array<strin
 export const getGenericFieldBuffer = (buf: Buffer, key: string, type: "string" | "number" | "stringArray") => {
   const rangeFinder: () => [number, number] = {
     number: (): [number, number] => {
-      const startSearch = bufferFromMixed(Buffer.of(STX), key, NUL);
-      const startIndex = findIndexOfBufferInBuffer(buf, startSearch);
-      const endIndex = startIndex + startSearch.length + 4;
+      const startIndex = findIndexOfKey(buf, STX, key);
+      if (startIndex < 0) return [0, 0];
+      const endIndex = startIndex + key.length + 6;
       return [startIndex, endIndex];
     },
     string: (): [number, number] => {
-      const startSearch = bufferFromMixed(Buffer.of(SOH), key, NUL);
-      const startIndex = findIndexOfBufferInBuffer(buf, startSearch);
+      const startIndex = findIndexOfKey(buf, SOH, key);
+      if (startIndex < 0) return [0, 0];
 
       let nuls = 0;
       const endIndex = 1 + buf.findIndex((b, i) => {
@@ -158,10 +178,9 @@ export const getGenericFieldBuffer = (buf: Buffer, key: string, type: "string" |
       return [startIndex, endIndex];
     },
     stringArray: (): [number, number] => {
-      const startSearch = bufferFromMixed(Buffer.of(NUL, NUL), key, NUL);
-      const startIndex = 1 + findIndexOfBufferInBuffer(buf, startSearch);
-      const endIndex = buf.length;
-      return [startIndex, endIndex];
+      const startIndex = findIndexOfKey(buf, NUL, key);
+      if (startIndex < 0) return [0, 0];
+      return [startIndex, buf.length];
     }
   }[type];
 
